@@ -1,0 +1,10 @@
+# Nmap 7.99 scan initiated Mon Oct  5 22:35:55 2026 as: /usr/lib/nmap/nmap -sS -Pn -p 1-100 -T3 --reason -oN scenario1-scan.txt 192.168.122.10
+Nmap scan report for 192.168.122.10
+Host is up, received arp-response (0.00020s latency).
+Not shown: 98 filtered tcp ports (no-response)
+PORT   STATE SERVICE REASON
+22/tcp open  ssh     syn-ack ttl 64
+80/tcp open  http    syn-ack ttl 63
+MAC Address: 52:54:00:6A:E7:91 (QEMU virtual NIC)
+
+# Nmap done at Mon Oct  5 22:35:57 2026 -- 1 IP address (1 host up) scanned in 2.42 seconds

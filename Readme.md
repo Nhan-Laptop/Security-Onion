@@ -370,6 +370,17 @@ PCAP
 Investigation
 Conclusion
 ```
+
+## Combine 
+| Scenario | Attack Technique | MITRE ATT&CK ID | Security Onion Data Source | Primary Detection / Artifact |
+| :--- | :--- | :--- | :--- | :--- |
+| **1. Reconnaissance** | Network Service Scanning | `T1046` | Zeek (`conn.log`), Suricata | NIDS Alert + High Volume SYN Packets |
+| **2. Auth Attack** | Brute Force / Password Spray | `T1110` | Elastic Agent (Sysmon/Auth log) | Event ID 4625 (Windows) / `sshd` failure |
+| **3. Web Attack** | Exploit Public-Facing App | `T1190` | Zeek (`http.log`), Suricata | HTTP 4xx/5xx errors, SQLi/XSS Payloads |
+| **4. Endpoint Execution** | Command and Scripting Interpreter (PowerShell) | `T1059.001` | Elastic Agent (Process Tracking) | Event ID 4688 / Sysmon Event ID 1 |
+| **5. Exfiltration** | Exfiltration Over Unencrypted Non-Application Protocol | `T1048.003` | Zeek (`files.log`), Suricata, PCAP | Extracted File Hash + PCAP Stream |
+| **6. Honeypot** | Honeypot Trigger | `DS0028` | OpenCanary Integration | Unauthorized Service Connection Alert |
+
 ## References 
 
 
