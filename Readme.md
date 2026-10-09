@@ -381,6 +381,134 @@ Conclusion
 | **5. Exfiltration** | Exfiltration Over Unencrypted Non-Application Protocol | `T1048.003` | Zeek (`files.log`), Suricata, PCAP | Extracted File Hash + PCAP Stream |
 | **6. Honeypot** | Honeypot Trigger | `DS0028` | OpenCanary Integration | Unauthorized Service Connection Alert |
 
+
+## Hiện thực 
+
+1. Tạo VM từ `metasploitable2.qcow2`.
+2. Metasploitable 2 cũ không boot được khi disk dùng VirtIO; VM rơi vào `(initramfs)` và chỉ thấy `lo`.
+3. Đổi disk bus sang **SATA/IDE**.
+4. Đổi NIC sang **e1000**.
+5. Nối NIC duy nhất vào **`lab-net`**, không nối `default`/bridged.
+
+### Trên máy host 
+Trên host:
+
+```bash
+sudo virsh net-dhcp-leases lab-net
+```
+
+Kết quả thực tế:
+
+```text
+MAC 52:54:00:ef:1e:15
+IP  192.168.100.188/24
+```
+
+Kiểm tra target sống:
+
+```bash
+ping -c 3 192.168.100.188
+```
+
+### Xác định tap 
+
+xem interface của meta: 
+```
+(base) ┌──(nhanlaptop㉿nhanlaptop)-[~/UIT/NT204/Security-Onion]
+└─$    sudo virsh domiwwflist linux2024
+ Interface   Type      Source    Model   MAC
+------------------------------------------------------------
+ vnet2       network   lab-net   e1000   52:54:00:ef:1e:15
+
+Metasploitable tap = vnet2
+```
+của Security: 
+```
+(base) ┌──(nhanlaptop㉿nhanlaptop)-[~/UIT/NT204/Security-Onion]
+└─$ sudo virsh domiflist rocky9
+ Interface   Type      Source    Model    MAC
+-------------------------------------------------------------
+ vnet0       network   default   virtio   52:54:00:0d:bf:fa
+ vnet1       network   lab-net   virtio   52:54:00:bb:47:60
+```
+
+Nên:
+
+```text
+   Security Onion sniffing tap = vnet1
+```
+
+ - vnet0 → management, mạng default.
+ - vnet1 → sniffing, mạng lab-net.
+
+
+Trong VM Security Onion chạy:
+
+ ```bash
+   ip -br addr
+ ```
+ ![alt text](image.png)
+
+
+### Dùng tap để mirror
+
+Sau khi xác định:
+
+```text
+  Target tap: vnet2
+  SO sniffing tap: vnet1
+```
+
+Mirror traff2ic:
+
+```bash
+  sudo tc qdisc add dev vnet2 clsact
+```
+
+```bash
+   sudo tc filter add dev vnet2 ingress pref 49151 matchall action mirred egress mirror dev vnet1
+```
+
+```bash
+   sudo tc filter add dev vnet2 egress pref 49151 matchall action mirred egress mirror dev vnet1
+```
+
+
+Kiểm tra:
+
+```bash
+  sudo tc -s filter show dev vnet5 ingress
+  sudo tc -s filter show dev vnet5 egress
+```
+
+```
+filter protocol all pref 49151 matchall chain 0
+filter protocol all pref 49151 matchall chain 0 handle 0x1
+  not_in_hw (rule hit 0)
+        action order 1: mirred (Egress Mirror to device vnet1) pipe
+        index 1 ref 1 bind 1 installed 32 sec used 32 sec
+        Action statistics:
+        Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0)
+        backlog 0b 0p requeues 0
+
+filter protocol all pref 49151 matchall chain 0
+filter protocol all pref 49151 matchall chain 0 handle 0x1
+  not_in_hw (rule hit 14)
+        action order 1: mirred (Egress Mirror to device vnet1) pipe
+        index 2 ref 1 bind 1 installed 28 sec used 1 sec firstused 27 sec
+        Action statistics:
+        Sent 728 bytes 14 pkt (dropped 0, overlimits 0 requeues 0)
+        backlog 0b 0p requeues 0
+
+```
+
+Kết quả thực tế:
+
+```text
+linux2024: vnet2 → lab-net → 52:54:00:ef:1e:15
+rocky9:     vnet1 → lab-net → Security Onion sniffing NIC
+```
+
 ## References 
 
 

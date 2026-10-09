@@ -4,6 +4,7 @@
 *.log
 *.tar.gz
 *.iso
+*.mp4
 
 # Bỏ qua node_modules và venv
 node_modules/

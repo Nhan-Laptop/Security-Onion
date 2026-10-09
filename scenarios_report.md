@@ -8,7 +8,7 @@ Tài liệu đi kèm `Readme.md`, dùng để ghi nhận kết quả thực nghi
 
 | Scenario | Nội dung | Trạng thái thực tế |
 |---|---|---|
-| 1 | Network Scanning | Đã xác minh traffic scan đến sensor và có Zeek connection logs; chưa xác minh Suricata alert, PCAP qua SOC và Case |
+| 1 | Network Scanning | Đã xác minh Metasploitable scan → mirror → Zeek `zeek.conn` trong Hunt (1000 events, source `192.168.100.1`, target `192.168.100.188`); chưa xác minh Suricata alert, PCAP qua SOC và Case |
 | 2 | Authentication Attack Simulation | Chưa thực hiện trong phiên này |
 | 3 | Suspicious Web Activity | Chưa thực hiện trong phiên này |
 | 4 | Endpoint Detection | Chưa thực hiện trong phiên này |
@@ -16,6 +16,8 @@ Tài liệu đi kèm `Readme.md`, dùng để ghi nhận kết quả thực nghi
 | 6 | Honeypot | Chưa thực hiện trong phiên này |
 
 Các mục hướng dẫn bên dưới không đồng nghĩa với việc đã thực hiện thành công. Chỉ đánh dấu hoàn thành khi có bằng chứng tương ứng.
+
+> **Runbook ngắn cho cả 6 scenario:** xem [`scenarios_step_by_step.md`](scenarios_step_by_step.md).
 
 ---
 

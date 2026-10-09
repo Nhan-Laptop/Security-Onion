@@ -1,0 +1,20 @@
+# Nmap 7.99 scan initiated Thu Oct  8 21:57:31 2026 as: /usr/lib/nmap/nmap -sS -Pn -p 1-1000 -T3 --reason -oN scenario1-metasploitable-scan.txt 192.168.100.188
+Nmap scan report for 192.168.100.188
+Host is up, received arp-response (0.00014s latency).
+Not shown: 988 closed tcp ports (reset)
+PORT    STATE SERVICE      REASON
+21/tcp  open  ftp          syn-ack ttl 64
+22/tcp  open  ssh          syn-ack ttl 64
+23/tcp  open  telnet       syn-ack ttl 64
+25/tcp  open  smtp         syn-ack ttl 64
+53/tcp  open  domain       syn-ack ttl 64
+80/tcp  open  http         syn-ack ttl 64
+111/tcp open  rpcbind      syn-ack ttl 64
+139/tcp open  netbios-ssn  syn-ack ttl 64
+445/tcp open  microsoft-ds syn-ack ttl 64
+512/tcp open  exec         syn-ack ttl 64
+513/tcp open  login        syn-ack ttl 64
+514/tcp open  shell        syn-ack ttl 64
+MAC Address: 52:54:00:EF:1E:15 (QEMU virtual NIC)
+
+# Nmap done at Thu Oct  8 21:57:32 2026 -- 1 IP address (1 host up) scanned in 0.71 seconds
