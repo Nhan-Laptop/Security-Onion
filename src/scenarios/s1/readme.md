@@ -16,7 +16,7 @@ Kali/host → Metasploitable
 ```
 
 Security Onion không tự nhìn thấy traffic unicast chỉ vì NIC sniffing cùng `lab-net`; cần SPAN/TAP hoặc mirror. Trong KVM lab này, dùng `tc mirred` để copy traffic từ tap của target sang tap sniffing.
-
+       
 link: https://drive.google.com/drive/folders/1RuUItXg7NyJd54tUx-sgSn7Uz24iIEXv?usp=drive_link
 
 ###  Bắt packet trước khi scan
