@@ -266,55 +266,79 @@ Không xóa toàn bộ qdisc hoặc filter không thuộc bài lab.
 
 ## 2.1. Scenario này nói về gì?
 
-Mô phỏng nhiều lần đăng nhập thất bại vào SSH/Windows để kiểm tra cả:
+Mô phỏng chuỗi các lần đăng nhập thất bại liên tiếp vào dịch vụ SSH trên máy chủ mục tiêu Metasploitable 2 nhằm kiểm tra sự phối hợp giữa:
 
-- **Network visibility:** kết nối từ Kali tới SSH/RDP.
-- **Host visibility:** auth log cho biết user, source IP và lý do thất bại.
+- **Network visibility:** Zeek ghi nhận các session kết nối dồn dập tới port 22 và SSH banner exchange.
+- **Host visibility:** Auth log (`/var/log/auth.log`) cung cấp thông tin tài khoản bị nhắm tới, IP nguồn và kết quả xác thực thất bại.
 
-ATT&CK: **T1110 — Brute Force**. Chỉ dùng vài lần thất bại có chủ ý trong lab, không chạy password spray lớn.
+ATT&CK: **T1110 — Brute Force** (Sub-technique: **T1110.001 — Password Guessing**).
 
-## 2.2. Các bước
-
-1. Dùng Ubuntu target và bật SSH:
-
-```bash
-sudo apt install -y openssh-server
-sudo systemctl enable --now ssh
-```
-
-2. Tạo user lab:
-
-```bash
-sudo adduser labuser
-```
-
-3. Cài Elastic Agent từ SOC → **Downloads/Fleet**.
-4. Bật System integration để thu `/var/log/auth.log`/`system.auth`.
-5. Từ Kali thử SSH khoảng 5 lần và nhập password sai:
-
-```bash
-ssh labuser@UBUNTU_IP
-```
-
-6. Hunt:
+## 2.2. Topology trên VMware
 
 ```text
-event.dataset:"system.auth" AND source.ip:"KALI_IP" AND event.outcome:"failure"
+Attacker Linux: 192.168.100.50 (VMnet2)
+       │
+       │ SSH Failed Logins (Port 22)
+       ▼
+Metasploitable 2 Target: 192.168.100.188 (VMnet2)
+       │
+       ▼ (Promiscuous vSwitch)
+Security Onion Sniffing NIC: ens34 (VMnet2, Promisc, NO IP)
+
+Security Onion Management NIC: ens33 (VMnet8 / NAT, IP 192.168.x.10)
 ```
 
-Nếu field khác:
+## 2.3. Các bước thực hiện trên VMware
 
-```text
-message:"Failed password" AND source.ip:"KALI_IP"
-```
+1. **Chuẩn bị Metasploitable 2:**
+   - Nối card mạng vào **`VMnet2`** (Custom / Isolated Lab).
+   - Đặt IP tĩnh `192.168.100.188/24` trong `/etc/network/interfaces`.
+   - Kiểm tra SSH đang lắng nghe: `sudo netstat -tlpn | grep :22`.
+   - Tạo user kiểm thử:
+     ```bash
+     sudo useradd -m -s /bin/bash labuser
+     echo "labuser:Lab@123456" | sudo chpasswd
+     ```
 
-7. Xác minh user, source IP, host và timestamp.
-8. Nếu cần alert, tạo Sigma threshold cho nhiều thất bại trong một khoảng thời gian.
-9. Tạo Case và ghi rõ đây là authorized lab test.
+2. **Cấu hình Security Onion Sniffing NIC:**
+   - Card sniffing (ví dụ `ens34`) nối vào **`VMnet2`**, **không gán IP**:
+     ```bash
+     sudo ip link set ens34 up
+     sudo ip link set ens34 promisc on
+     ```
 
-## 2.3. Vì sao cần Elastic Agent?
+3. **Chạy tấn công mô phỏng từ Attacker Linux (`192.168.100.50`):**
+   - Chạy script tự động:
+     ```bash
+     ./src/scenarios/s2/auth_attack_simulation.sh 192.168.100.188 labuser
+     ```
+   - Hoặc chạy Hydra:
+     ```bash
+     hydra -l labuser -P passlist.txt ssh://192.168.100.188 -t 2 -V
+     ```
 
-Zeek chỉ thấy connection; nó không biết password sai hay user nào. Auth log từ endpoint mới cung cấp context đó.
+4. **Điều tra trên Security Onion SOC (Hunt):**
+   - **Network metadata (Zeek):**
+     ```text
+     event.dataset:"zeek.conn" AND destination.port:22 AND destination.ip:"192.168.100.188"
+     ```
+   - **SSH metadata (Zeek):**
+     ```text
+     event.dataset:"zeek.ssh" AND destination.ip:"192.168.100.188"
+     ```
+   - **Host view (Metasploitable 2 auth log):**
+     ```bash
+     sudo cat /var/log/auth.log | grep sshd
+     ```
+     *(Thấy rõ: `Failed password for labuser from 192.168.100.50 port ... ssh2`)*.
+
+5. **Pivot PCAP & Đóng Case:**
+   - Kiểm tra PCAP: Thấy TCP handshake, SSH KEXINIT, sau đó toàn bộ payload đều được mã hóa (`Encrypted packet`).
+   - Tạo Case: `LAB Scenario 2 — SSH Authentication Brute Force Attempt (VMware)`, phân loại `Authorized lab activity`.
+
+## 2.4. Điểm nhấn kiến trúc
+
+Zeek chỉ thấy các kết nối SSH nhưng không thể giải mã payload. Auth log từ máy mục tiêu là yếu tố quyết định để xác định chính xác username bị dò quét và kết quả đăng nhập.
 
 ---
 
