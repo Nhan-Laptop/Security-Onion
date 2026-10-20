@@ -155,6 +155,17 @@ Security Onion **bắt buộc** phải có 2 card mạng độc lập:
    ip -br addr show ens34
    ```
 
+5. **Cấu hình Host Firewall bằng `so-firewall` (Security Onion 3.3):**
+   > [!IMPORTANT]
+   > Trên **Security Onion 3.3**, công cụ quản lý tường lửa tích hợp là **`so-firewall`** (thay thế cho lệnh `so-allow` của các phiên bản cũ).
+   > Mặc định, Security Onion chặn hoàn toàn cổng HTTPS (port 443). Nếu máy Host chưa được cấp phép, Nmap quét sẽ báo `443/tcp filtered` và trình duyệt sẽ bị connection timeout.
+
+   Chạy lệnh sau trên terminal của Security Onion:
+   ```bash
+   # Mở quyền truy cập Web SOC (port 443) cho máy Host Analyst (hoặc toàn dải VMnet8 192.168.182.0/24)
+   sudo so-firewall includehost analyst 192.168.182.0/24 --apply
+   ```
+
 ---
 
 ### 3.3. Máy 2: Metasploitable 2 (Mục tiêu - SSH Target)
@@ -248,7 +259,7 @@ Metasploitable 2 là máy chủ Linux dựng sẵn để thực hành pentest v�
 
 | STT | Bước kiểm tra | Máy thực hiện | Lệnh kiểm tra | Kết quả mong đợi |
 |:---:|---|---|---|---|
-| 1 | **Management SOC** | Máy thật / Host | Mở trình duyệt: `https://192.168.182.10` | Đăng nhập SOC bình thường |
+| 1 | **Management SOC** | Máy thật / Host | Mở trình duyệt: `https://192.168.182.10` (hoặc `nmap 192.168.182.10 -p 443 -Pn`) | Đăng nhập SOC bình thường (Port 443 mở; nếu bị `filtered`/timeout thì cấu hình `sudo so-firewall includehost analyst ...`) |
 | 2 | **Sniffing Promisc** | Security Onion | `ip -br link show ens34` | Thấy trạng thái `UP`, cờ `PROMISC`, **không có IP** |
 | 3 | **SSH Target Port** | Metasploitable 2 | `sudo netstat -tlpn \| grep :22` | Port 22 ở trạng thái `LISTEN` |
 | 4 | **Target User** | Metasploitable 2 | `id labuser` | Tài khoản `labuser` tồn tại |

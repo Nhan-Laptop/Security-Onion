@@ -309,7 +309,15 @@ Web SOC: https://192.168.182.10
      sudo ip link set ens34 promisc on
      ```
 
-3. **Chạy tấn công mô phỏng từ Attacker Linux (`192.168.100.50`):**
+3. **Cấu hình Firewall trên Security Onion 3.3 (`so-firewall`):**
+   - Mặc định Security Onion 3.3 chặn toàn bộ kết nối HTTPS (port 443) tới Web SOC.
+   - Để máy Host Analyst (Windows `192.168.182.1` hoặc toàn dải `192.168.182.0/24`) truy cập được giao diện `https://192.168.182.10`, chạy lệnh sau trên terminal của Security Onion:
+     ```bash
+     sudo so-firewall includehost analyst 192.168.182.0/24 --apply
+     ```
+   - *(Lưu ý: Security Onion 3.3 dùng công cụ `so-firewall`, không dùng `so-allow` cũ).*
+
+4. **Chạy tấn công mô phỏng từ Attacker Linux (`192.168.100.50`):**
    - Chạy script tự động:
      ```bash
      ./src/scenarios/s2/auth_attack_simulation.sh 192.168.100.188 labuser
@@ -319,7 +327,7 @@ Web SOC: https://192.168.182.10
      hydra -l labuser -P passlist.txt ssh://192.168.100.188 -t 2 -V
      ```
 
-4. **Điều tra trên Security Onion SOC (Hunt):**
+5. **Điều tra trên Security Onion SOC (Hunt):**
    - **Network metadata (Zeek):**
      ```text
      event.dataset:"zeek.conn" AND destination.port:22 AND destination.ip:"192.168.100.188"
@@ -334,7 +342,7 @@ Web SOC: https://192.168.182.10
      ```
      *(Thấy rõ: `Failed password for labuser from 192.168.100.50 port ... ssh2`)*.
 
-5. **Pivot PCAP & Đóng Case:**
+6. **Pivot PCAP & Đóng Case:**
    - Kiểm tra PCAP: Thấy TCP handshake, SSH KEXINIT, sau đó toàn bộ payload đều được mã hóa (`Encrypted packet`).
    - Tạo Case: `LAB Scenario 2 — SSH Authentication Brute Force Attempt (VMware)`, phân loại `Authorized lab activity`.
 
@@ -419,18 +427,30 @@ Windows Endpoint: 192.168.182.20 (VMnet8 / NAT)
 
 ## 4.3. Các bước thực hiện
 
-1. **Lấy lệnh cài Elastic Agent từ SOC Console:**
+1. **Mở Tường lửa trên Security Onion 3.3 (`so-firewall`):**
+   - Mặc định Security Onion 3.3 chặn cổng Web (443) và cổng tiếp nhận Agent của Fleet Server (8220).
+   - Chạy các lệnh sau trên terminal của Security Onion:
+     ```bash
+     # Mở quyền cho Host Analyst truy cập Web SOC Console (port 443)
+     sudo so-firewall includehost analyst 192.168.182.0/24 --apply
+
+     # Mở quyền cho Endpoint kết nối tới Fleet Server (port 8220)
+     sudo so-firewall includehost fleet 192.168.182.0/24 --apply
+     ```
+   - *(Lưu ý: Dùng `so-firewall`, không dùng `so-allow` cũ).*
+
+2. **Lấy lệnh cài Elastic Agent từ SOC Console:**
    - Vào `https://192.168.182.10` ➔ **Administration** ➔ **Fleet** ➔ **Add Agent**.
    - Copy lệnh cài đặt PowerShell cho Windows Endpoint (bắt buộc kèm cờ `--insecure` trong lab).
 
-2. **Cài đặt Sysmon trên Windows Endpoint:**
+3. **Cài đặt Sysmon trên Windows Endpoint:**
    - Tải file thực thi `sysmon64.exe` và file cấu hình `sysmonconfig.xml` (SwiftOnSecurity).
    - Cài đặt với quyền Admin:
      ```cmd
      sysmon64.exe -i sysmonconfig.xml -accepteula
      ```
 
-3. **Chạy mô phỏng hành vi tấn công:**
+4. **Chạy mô phỏng hành vi tấn công:**
    - Chạy script tự động:
      ```powershell
      .\src\scenarios\s4\endpoint_simulation.ps1
@@ -441,7 +461,7 @@ Windows Endpoint: 192.168.182.20 (VMnet8 / NAT)
      powershell.exe -NoProfile -WindowStyle Hidden -EncodedCommand <BASE64_PAYLOAD>
      ```
 
-4. **Điều tra trên Security Onion SOC (Hunt):**
+5. **Điều tra trên Security Onion SOC (Hunt):**
    - **Tìm log Process Creation (Sysmon Event ID 1):**
      ```text
      event.code:1 AND process.command_line:*SO-LAB-POWERSHELL*
@@ -452,7 +472,7 @@ Windows Endpoint: 192.168.182.20 (VMnet8 / NAT)
      ```
    - **Xác minh các trường bằng chứng:** Host (`host.hostname`), User (`user.name`), Parent Process (`process.parent.name`), Command Line nguyên bản và Hash SHA256.
 
-5. **Tương quan và đóng Case:**
+6. **Tương quan và đóng Case:**
    - Tạo Detection Rule cho kỹ thuật PowerShell mã hóa.
    - Tạo Case `LAB Scenario 4 — Suspicious PowerShell Execution on Windows Endpoint`, phân loại `Authorized lab activity`.
 

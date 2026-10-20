@@ -70,6 +70,20 @@ Trong các kịch bản trước (Scenario 1 & Scenario 2), Security Onion đón
 
 ## 3. Hướng dẫn Cài đặt & Kết nối Endpoint vào Security Onion
 
+### 3.0. Mở Firewall trên Security Onion 3.3 (`so-firewall`)
+> [!IMPORTANT]
+> Trên **Security Onion 3.3**, tường lửa mặc định chặn truy cập Web Console (port 443) và cổng tiếp nhận Agent của Fleet Server (port 8220).
+> Bạn phải sử dụng lệnh **`so-firewall`** (thay cho `so-allow` cũ) trực tiếp trên máy Security Onion để whitelist dải mạng:
+
+```bash
+# 1. Mở quyền cho máy Host Analyst truy cập Web SOC (port 443)
+sudo so-firewall includehost analyst 192.168.182.0/24 --apply
+
+# 2. Mở quyền cho máy Endpoint kết nối tới Fleet Server (port 8220)
+sudo so-firewall includehost fleet 192.168.182.0/24 --apply
+```
+*(Nếu không chạy lệnh trên, Nmap từ máy Endpoint hoặc Host tới port 443/8220 sẽ trả về `filtered` và Elastic Agent không thể đăng ký thành công).*
+
 ### 3.1. Lấy lệnh cài đặt Elastic Agent từ Security Onion SOC
 1. Mở trình duyệt trên máy thật, truy cập Web SOC: `https://192.168.182.10`.
 2. Đăng nhập bằng tài khoản quản trị đã tạo lúc setup.

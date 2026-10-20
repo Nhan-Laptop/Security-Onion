@@ -91,7 +91,7 @@ sudo so-status
 Điều kiện để tiếp tục:
 - `enp1s0` có `192.168.122.10/24`.
 - NIC sniffing `enp7s0` không có IP.
-- Suricata và Zeek hoạt động; SOC truy cập được qua `https://192.168.122.10`.
+- Suricata và Zeek hoạt động; SOC truy cập được qua `https://192.168.122.10` (trên Security Onion 3.3, quản lý quyền truy cập qua `sudo so-firewall includehost analyst <IP_or_CIDR> --apply`).
 
 **Trên host Kali:**
 
