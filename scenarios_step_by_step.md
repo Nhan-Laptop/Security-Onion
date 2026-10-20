@@ -285,7 +285,9 @@ Metasploitable 2 Target: 192.168.100.188 (VMnet2)
        ▼ (Promiscuous vSwitch)
 Security Onion Sniffing NIC: ens34 (VMnet2, Promisc, NO IP)
 
-Security Onion Management NIC: ens33 (VMnet8 / NAT, IP 192.168.x.10)
+Security Onion Management NIC: ens33 (VMnet8 / NAT, IP 192.168.182.10, GW 192.168.182.2)
+Host Analyst (Windows): 192.168.182.1 (VMware Network Adapter VMnet8)
+Web SOC: https://192.168.182.10
 ```
 
 ## 2.3. Các bước thực hiện trên VMware
@@ -392,40 +394,71 @@ Mục tiêu scenario là chứng minh visibility và workflow, không phải kha
 
 ---
 
-# Scenario 4 — Endpoint Detection
+# Scenario 4 — Endpoint Detection & Host Telemetry (Elastic Agent + Sysmon)
 
 ## 4.1. Scenario này nói về gì?
 
-Kiểm tra Security Onion có thấy hành vi trên endpoint hay không, kể cả khi packet network không đủ context.
+Kiểm tra Security Onion có phát hiện được hành vi đáng ngờ trên máy trạm (Endpoint) hay không, kể cả khi mã độc chạy ngầm hoặc kết nối mạng bị mã hóa. Kịch bản tập trung so sánh giữa **Network Visibility** và **Host Visibility**.
 
-ATT&CK: **T1059.001 — PowerShell**.
+- ATT&CK: **T1059.001 — Command and Scripting Interpreter: PowerShell** & **T1082 — System Information Discovery**.
+- Thư mục kịch bản chi tiết: [`src/scenarios/s4/`](file:///home/sup3rshy/Security-Onion/src/scenarios/s4/)
+- Script mô phỏng PowerShell: [`endpoint_simulation.ps1`](file:///home/sup3rshy/Security-Onion/src/scenarios/s4/endpoint_simulation.ps1)
+- Script mô phỏng Linux: [`endpoint_simulation.sh`](file:///home/sup3rshy/Security-Onion/src/scenarios/s4/endpoint_simulation.sh)
 
-## 4.2. Các bước
-
-1. Dùng Windows endpoint trong lab.
-2. Cài Elastic Agent từ SOC.
-3. Cài Sysmon với config được phê duyệt.
-4. Xác nhận process creation/Event ID 1 được ingest.
-5. Chạy lệnh vô hại:
-
-```powershell
-powershell.exe -NoProfile -Command "Write-Output 'SO-LAB-POWERSHELL'"
-```
-
-6. Hunt:
+## 4.2. Topology mạng Endpoint trên VMware
 
 ```text
-process.name:"powershell.exe" AND process.command_line:*SO-LAB-POWERSHELL*
+Security Onion (Fleet Server): 192.168.182.10 (VMnet8 / NAT, Port 8220)
+       ▲
+       │ Elastic Agent Ingest (SSL Encrypted)
+       │
+Windows Endpoint: 192.168.182.20 (VMnet8 / NAT)
+       • Sysmon Driver (Event ID 1, 3, 11)
+       • Elastic Agent (Enrolled to Fleet)
 ```
 
-7. Xác minh host, user, parent process, command line và timestamp.
-8. Tạo Sigma detection cho marker, deploy và chạy lại một lần.
-9. Kiểm tra Alerts rồi tạo Case.
-10. Disable rule lab sau demo.
+## 4.3. Các bước thực hiện
 
-## 4.3. Vì sao cần endpoint telemetry?
+1. **Lấy lệnh cài Elastic Agent từ SOC Console:**
+   - Vào `https://192.168.182.10` ➔ **Administration** ➔ **Fleet** ➔ **Add Agent**.
+   - Copy lệnh cài đặt PowerShell cho Windows Endpoint (bắt buộc kèm cờ `--insecure` trong lab).
 
-Network sensor có thể thấy kết nối, nhưng không biết process nào chạy trên Windows. Elastic Agent/Sysmon bổ sung process, user và parent process.
+2. **Cài đặt Sysmon trên Windows Endpoint:**
+   - Tải file thực thi `sysmon64.exe` và file cấu hình `sysmonconfig.xml` (SwiftOnSecurity).
+   - Cài đặt với quyền Admin:
+     ```cmd
+     sysmon64.exe -i sysmonconfig.xml -accepteula
+     ```
+
+3. **Chạy mô phỏng hành vi tấn công:**
+   - Chạy script tự động:
+     ```powershell
+     .\src\scenarios\s4\endpoint_simulation.ps1
+     ```
+   - Hoặc chạy lệnh PowerShell mã hóa Base64 (`-EncodedCommand`):
+     ```powershell
+     powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Write-Output 'SO-LAB-POWERSHELL-MARKER-2026'"
+     powershell.exe -NoProfile -WindowStyle Hidden -EncodedCommand <BASE64_PAYLOAD>
+     ```
+
+4. **Điều tra trên Security Onion SOC (Hunt):**
+   - **Tìm log Process Creation (Sysmon Event ID 1):**
+     ```text
+     event.code:1 AND process.command_line:*SO-LAB-POWERSHELL*
+     ```
+   - **Tìm lệnh PowerShell thực thi Base64:**
+     ```text
+     process.name:"powershell.exe" AND process.command_line:*-EncodedCommand*
+     ```
+   - **Xác minh các trường bằng chứng:** Host (`host.hostname`), User (`user.name`), Parent Process (`process.parent.name`), Command Line nguyên bản và Hash SHA256.
+
+5. **Tương quan và đóng Case:**
+   - Tạo Detection Rule cho kỹ thuật PowerShell mã hóa.
+   - Tạo Case `LAB Scenario 4 — Suspicious PowerShell Execution on Windows Endpoint`, phân loại `Authorized lab activity`.
+
+## 4.4. Điểm nhấn kiến trúc
+
+Network sensor (Zeek/Suricata) chỉ thấy lưu lượng mạng nhưng không thể thấy được tiến trình nào sinh ra kết nối đó nếu traffic bị mã hóa. Elastic Agent kết hợp Sysmon cung cấp ngữ cảnh đầy đủ: Process ID, Parent Process, Hash và Command Line chi tiết.
 
 ---
 

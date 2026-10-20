@@ -52,7 +52,7 @@ Trong môi trường VMware, ta phân chia 2 mạng ảo độc lập thông qua
 ┌──────────────────────────────────────────────────────────────────────────────────┐
 │                         VMware Hypervisor (Workstation / ESXi)                   │
 │                                                                                  │
-│   VMnet8 (NAT / Bridged): 192.168.x.0/24 (Mạng quản trị & Internet)              │
+│   VMnet8 (NAT / Bridged): 192.168.182.0/24 (Mạng quản trị & Internet)            │
 │   VMnet2 (Custom / Host-Only): 192.168.100.0/24 (Mạng Isolated Lab)               │
 └───────────────┬──────────────────────────────────────────┬───────────────────────┘
                 │                                          │
@@ -60,7 +60,7 @@ Trong môi trường VMware, ta phân chia 2 mạng ảo độc lập thông qua
                 │                                          │
 ┌───────────────▼──────────────────────────────────────────▼───────────────────────┐
 │                           Security Onion (VM Dual NIC)                           │
-│   • Management NIC : ens33 (Có IP: 192.168.x.10/24, GW ra ngoài)                 │
+│   • Management NIC : ens33 (Có IP: 192.168.182.10/24, GW: 192.168.182.2)         │
 │   • Sniffing NIC   : ens34 (KHÔNG IP, Promiscuous Mode, hứng traffic VMnet2)     │
 └─────────────────────────────────────▲────────────────────────────────────────────┘
                                       │
@@ -80,7 +80,7 @@ Trong môi trường VMware, ta phân chia 2 mạng ảo độc lập thông qua
 
 | Máy ảo | Vai trò trong Lab | Network Adapter VMware | Interface trong OS | Địa chỉ IP đề xuất | Ghi chú cấu hình |
 |---|---|---|---|---|---|
-| **Security Onion** | Sensor NIDS & SIEM SOC | **Adapter 1:** VMnet8 (NAT)<br>**Adapter 2:** VMnet2 (Custom) | `ens33` (Mgmt)<br>`ens34` (Sniff) | `192.168.x.10/24`<br>**Không có IP (Unnumbered)** | Dual NIC. `ens34` bật Promiscuous để hứng toàn bộ traffic trên VMnet2. |
+| **Security Onion** | Sensor NIDS & SIEM SOC | **Adapter 1:** VMnet8 (NAT)<br>**Adapter 2:** VMnet2 (Custom) | `ens33` (Mgmt)<br>`ens34` (Sniff) | `192.168.182.10/24`<br>**Không có IP (Unnumbered)** | Dual NIC. `ens34` bật Promiscuous để hứng toàn bộ traffic trên VMnet2. Host máy thật truy cập SOC qua `192.168.182.1`. |
 | **Metasploitable 2** | Mục tiêu (SSH Server) | **Adapter 1:** VMnet2 (Custom) | `eth0` | `192.168.100.188/24` | Adapter type: `e1000` hoặc mặc định. Port 22 mở sẵn. |
 | **Attacker Linux** | Máy tấn công (Kali/Ubuntu) | **Adapter 1:** VMnet2 (Custom) | `eth0` / `ens33` | `192.168.100.50/24` | Chạy Hydra / Python / Script mô phỏng dò mật khẩu. |
 
@@ -130,10 +130,10 @@ Security Onion **bắt buộc** phải có 2 card mạng độc lập:
 
 3. **Cấu hình Card 1 — Management (`ens33`):**
    ```bash
-   # Thiết lập IP tĩnh cho card quản lý (ví dụ: dải 192.168.122.x hoặc 192.168.80.x tùy VMnet8)
-   sudo nmcli con mod "ens33" ipv4.addresses "192.168.122.10/24"
-   sudo nmcli con mod "ens33" ipv4.gateway "192.168.122.1"
-   sudo nmcli con mod "ens33" ipv4.dns "8.8.8.8 192.168.122.1"
+   # Thiết lập IP tĩnh cho card quản lý (thuộc dải VMnet8: 192.168.182.0/24)
+   sudo nmcli con mod "ens33" ipv4.addresses "192.168.182.10/24"
+   sudo nmcli con mod "ens33" ipv4.gateway "192.168.182.2"
+   sudo nmcli con mod "ens33" ipv4.dns "8.8.8.8 192.168.182.2"
    sudo nmcli con mod "ens33" ipv4.method manual
    sudo nmcli con up "ens33"
 
@@ -248,7 +248,7 @@ Metasploitable 2 là máy chủ Linux dựng sẵn để thực hành pentest v�
 
 | STT | Bước kiểm tra | Máy thực hiện | Lệnh kiểm tra | Kết quả mong đợi |
 |:---:|---|---|---|---|
-| 1 | **Management SOC** | Máy thật / Host | Mở trình duyệt: `https://192.168.x.10` | Đăng nhập SOC bình thường |
+| 1 | **Management SOC** | Máy thật / Host | Mở trình duyệt: `https://192.168.182.10` | Đăng nhập SOC bình thường |
 | 2 | **Sniffing Promisc** | Security Onion | `ip -br link show ens34` | Thấy trạng thái `UP`, cờ `PROMISC`, **không có IP** |
 | 3 | **SSH Target Port** | Metasploitable 2 | `sudo netstat -tlpn \| grep :22` | Port 22 ở trạng thái `LISTEN` |
 | 4 | **Target User** | Metasploitable 2 | `id labuser` | Tài khoản `labuser` tồn tại |
@@ -318,7 +318,7 @@ done | tee scenario2-auth-attack.log
 ### Bước 3 — Điều tra & Tương quan trên Security Onion SOC (Threat Hunting)
 
 #### 3.1. Phân tích Network Telemetry (Zeek Logs)
-1. Đăng nhập giao diện Web SOC: `https://192.168.x.10` ➔ Vào mục **Hunt**.
+1. Đăng nhập giao diện Web SOC: `https://192.168.182.10` ➔ Vào mục **Hunt**.
 2. Chọn mốc thời gian bao phủ đợt kiểm thử (ví dụ: `Last 15 minutes`).
 3. Chạy truy vấn tìm các kết nối SSH tới máy mục tiêu:
    ```text
