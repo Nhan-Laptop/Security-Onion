@@ -266,55 +266,89 @@ Không xóa toàn bộ qdisc hoặc filter không thuộc bài lab.
 
 ## 2.1. Scenario này nói về gì?
 
-Mô phỏng nhiều lần đăng nhập thất bại vào SSH/Windows để kiểm tra cả:
+Mô phỏng chuỗi các lần đăng nhập thất bại liên tiếp vào dịch vụ SSH trên máy chủ mục tiêu Metasploitable 2 nhằm kiểm tra sự phối hợp giữa:
 
-- **Network visibility:** kết nối từ Kali tới SSH/RDP.
-- **Host visibility:** auth log cho biết user, source IP và lý do thất bại.
+- **Network visibility:** Zeek ghi nhận các session kết nối dồn dập tới port 22 và SSH banner exchange.
+- **Host visibility:** Auth log (`/var/log/auth.log`) cung cấp thông tin tài khoản bị nhắm tới, IP nguồn và kết quả xác thực thất bại.
 
-ATT&CK: **T1110 — Brute Force**. Chỉ dùng vài lần thất bại có chủ ý trong lab, không chạy password spray lớn.
+ATT&CK: **T1110 — Brute Force** (Sub-technique: **T1110.001 — Password Guessing**).
 
-## 2.2. Các bước
-
-1. Dùng Ubuntu target và bật SSH:
-
-```bash
-sudo apt install -y openssh-server
-sudo systemctl enable --now ssh
-```
-
-2. Tạo user lab:
-
-```bash
-sudo adduser labuser
-```
-
-3. Cài Elastic Agent từ SOC → **Downloads/Fleet**.
-4. Bật System integration để thu `/var/log/auth.log`/`system.auth`.
-5. Từ Kali thử SSH khoảng 5 lần và nhập password sai:
-
-```bash
-ssh labuser@UBUNTU_IP
-```
-
-6. Hunt:
+## 2.2. Topology trên VMware
 
 ```text
-event.dataset:"system.auth" AND source.ip:"KALI_IP" AND event.outcome:"failure"
+Attacker Linux: 192.168.100.50 (VMnet2)
+       │
+       │ SSH Failed Logins (Port 22)
+       ▼
+Metasploitable 2 Target: 192.168.100.188 (VMnet2)
+       │
+       ▼ (Promiscuous vSwitch)
+Security Onion Sniffing NIC: ens34 (VMnet2, Promisc, NO IP)
+
+Security Onion Management NIC: ens33 (VMnet8 / NAT, IP 192.168.182.10, GW 192.168.182.2)
+Host Analyst (Windows): 192.168.182.1 (VMware Network Adapter VMnet8)
+Web SOC: https://192.168.182.10
 ```
 
-Nếu field khác:
+## 2.3. Các bước thực hiện trên VMware
 
-```text
-message:"Failed password" AND source.ip:"KALI_IP"
-```
+1. **Chuẩn bị Metasploitable 2:**
+   - Nối card mạng vào **`VMnet2`** (Custom / Isolated Lab).
+   - Đặt IP tĩnh `192.168.100.188/24` trong `/etc/network/interfaces`.
+   - Kiểm tra SSH đang lắng nghe: `sudo netstat -tlpn | grep :22`.
+   - Tạo user kiểm thử:
+     ```bash
+     sudo useradd -m -s /bin/bash labuser
+     echo "labuser:Lab@123456" | sudo chpasswd
+     ```
 
-7. Xác minh user, source IP, host và timestamp.
-8. Nếu cần alert, tạo Sigma threshold cho nhiều thất bại trong một khoảng thời gian.
-9. Tạo Case và ghi rõ đây là authorized lab test.
+2. **Cấu hình Security Onion Sniffing NIC:**
+   - Card sniffing (ví dụ `ens34`) nối vào **`VMnet2`**, **không gán IP**:
+     ```bash
+     sudo ip link set ens34 up
+     sudo ip link set ens34 promisc on
+     ```
 
-## 2.3. Vì sao cần Elastic Agent?
+3. **Cấu hình Firewall trên Security Onion 3.3 (`so-firewall`):**
+   - Mặc định Security Onion 3.3 chặn toàn bộ kết nối HTTPS (port 443) tới Web SOC.
+   - Để máy Host Analyst (Windows `192.168.182.1` hoặc toàn dải `192.168.182.0/24`) truy cập được giao diện `https://192.168.182.10`, chạy lệnh sau trên terminal của Security Onion:
+     ```bash
+     sudo so-firewall includehost analyst 192.168.182.0/24 --apply
+     ```
+   - *(Lưu ý: Security Onion 3.3 dùng công cụ `so-firewall`, không dùng `so-allow` cũ).*
 
-Zeek chỉ thấy connection; nó không biết password sai hay user nào. Auth log từ endpoint mới cung cấp context đó.
+4. **Chạy tấn công mô phỏng từ Attacker Linux (`192.168.100.50`):**
+   - Chạy script tự động:
+     ```bash
+     ./src/scenarios/s2/auth_attack_simulation.sh 192.168.100.188 labuser
+     ```
+   - Hoặc chạy Hydra:
+     ```bash
+     hydra -l labuser -P passlist.txt ssh://192.168.100.188 -t 2 -V
+     ```
+
+5. **Điều tra trên Security Onion SOC (Hunt):**
+   - **Network metadata (Zeek):**
+     ```text
+     event.dataset:"zeek.conn" AND destination.port:22 AND destination.ip:"192.168.100.188"
+     ```
+   - **SSH metadata (Zeek):**
+     ```text
+     event.dataset:"zeek.ssh" AND destination.ip:"192.168.100.188"
+     ```
+   - **Host view (Metasploitable 2 auth log):**
+     ```bash
+     sudo cat /var/log/auth.log | grep sshd
+     ```
+     *(Thấy rõ: `Failed password for labuser from 192.168.100.50 port ... ssh2`)*.
+
+6. **Pivot PCAP & Đóng Case:**
+   - Kiểm tra PCAP: Thấy TCP handshake, SSH KEXINIT, sau đó toàn bộ payload đều được mã hóa (`Encrypted packet`).
+   - Tạo Case: `LAB Scenario 2 — SSH Authentication Brute Force Attempt (VMware)`, phân loại `Authorized lab activity`.
+
+## 2.4. Điểm nhấn kiến trúc
+
+Zeek chỉ thấy các kết nối SSH nhưng không thể giải mã payload. Auth log từ máy mục tiêu là yếu tố quyết định để xác định chính xác username bị dò quét và kết quả đăng nhập.
 
 ---
 
@@ -368,40 +402,83 @@ Mục tiêu scenario là chứng minh visibility và workflow, không phải kha
 
 ---
 
-# Scenario 4 — Endpoint Detection
+# Scenario 4 — Endpoint Detection & Host Telemetry (Elastic Agent + Sysmon)
 
 ## 4.1. Scenario này nói về gì?
 
-Kiểm tra Security Onion có thấy hành vi trên endpoint hay không, kể cả khi packet network không đủ context.
+Kiểm tra Security Onion có phát hiện được hành vi đáng ngờ trên máy trạm (Endpoint) hay không, kể cả khi mã độc chạy ngầm hoặc kết nối mạng bị mã hóa. Kịch bản tập trung so sánh giữa **Network Visibility** và **Host Visibility**.
 
-ATT&CK: **T1059.001 — PowerShell**.
+- ATT&CK: **T1059.001 — Command and Scripting Interpreter: PowerShell** & **T1082 — System Information Discovery**.
+- Thư mục kịch bản chi tiết: [`src/scenarios/s4/`](file:///home/sup3rshy/Security-Onion/src/scenarios/s4/)
+- Script mô phỏng PowerShell: [`endpoint_simulation.ps1`](file:///home/sup3rshy/Security-Onion/src/scenarios/s4/endpoint_simulation.ps1)
+- Script mô phỏng Linux: [`endpoint_simulation.sh`](file:///home/sup3rshy/Security-Onion/src/scenarios/s4/endpoint_simulation.sh)
 
-## 4.2. Các bước
-
-1. Dùng Windows endpoint trong lab.
-2. Cài Elastic Agent từ SOC.
-3. Cài Sysmon với config được phê duyệt.
-4. Xác nhận process creation/Event ID 1 được ingest.
-5. Chạy lệnh vô hại:
-
-```powershell
-powershell.exe -NoProfile -Command "Write-Output 'SO-LAB-POWERSHELL'"
-```
-
-6. Hunt:
+## 4.2. Topology mạng Endpoint trên VMware
 
 ```text
-process.name:"powershell.exe" AND process.command_line:*SO-LAB-POWERSHELL*
+Security Onion (Fleet Server): 192.168.182.10 (VMnet8 / NAT, Port 8220)
+       ▲
+       │ Elastic Agent Ingest (SSL Encrypted)
+       │
+Windows Endpoint: 192.168.182.20 (VMnet8 / NAT)
+       • Sysmon Driver (Event ID 1, 3, 11)
+       • Elastic Agent (Enrolled to Fleet)
 ```
 
-7. Xác minh host, user, parent process, command line và timestamp.
-8. Tạo Sigma detection cho marker, deploy và chạy lại một lần.
-9. Kiểm tra Alerts rồi tạo Case.
-10. Disable rule lab sau demo.
+## 4.3. Các bước thực hiện
 
-## 4.3. Vì sao cần endpoint telemetry?
+1. **Mở Tường lửa trên Security Onion 3.3 (`so-firewall`):**
+   - Mặc định Security Onion 3.3 chặn cổng Web (443) và cổng tiếp nhận Agent của Fleet Server (8220).
+   - Chạy các lệnh sau trên terminal của Security Onion:
+     ```bash
+     # Mở quyền cho Host Analyst truy cập Web SOC Console (port 443)
+     sudo so-firewall includehost analyst 192.168.182.0/24 --apply
 
-Network sensor có thể thấy kết nối, nhưng không biết process nào chạy trên Windows. Elastic Agent/Sysmon bổ sung process, user và parent process.
+     # Mở quyền cho Endpoint kết nối tới Fleet Server (port 8220)
+     sudo so-firewall includehost fleet 192.168.182.0/24 --apply
+     ```
+   - *(Lưu ý: Dùng `so-firewall`, không dùng `so-allow` cũ).*
+
+2. **Lấy lệnh cài Elastic Agent từ SOC Console:**
+   - Vào `https://192.168.182.10` ➔ **Administration** ➔ **Fleet** ➔ **Add Agent**.
+   - Copy lệnh cài đặt PowerShell cho Windows Endpoint (bắt buộc kèm cờ `--insecure` trong lab).
+
+3. **Cài đặt Sysmon trên Windows Endpoint:**
+   - Tải file thực thi `sysmon64.exe` và file cấu hình `sysmonconfig.xml` (SwiftOnSecurity).
+   - Cài đặt với quyền Admin:
+     ```cmd
+     sysmon64.exe -i sysmonconfig.xml -accepteula
+     ```
+
+4. **Chạy mô phỏng hành vi tấn công:**
+   - Chạy script tự động:
+     ```powershell
+     .\src\scenarios\s4\endpoint_simulation.ps1
+     ```
+   - Hoặc chạy lệnh PowerShell mã hóa Base64 (`-EncodedCommand`):
+     ```powershell
+     powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Write-Output 'SO-LAB-POWERSHELL-MARKER-2026'"
+     powershell.exe -NoProfile -WindowStyle Hidden -EncodedCommand <BASE64_PAYLOAD>
+     ```
+
+5. **Điều tra trên Security Onion SOC (Hunt):**
+   - **Tìm log Process Creation (Sysmon Event ID 1):**
+     ```text
+     event.code:1 AND process.command_line:*SO-LAB-POWERSHELL*
+     ```
+   - **Tìm lệnh PowerShell thực thi Base64:**
+     ```text
+     process.name:"powershell.exe" AND process.command_line:*-EncodedCommand*
+     ```
+   - **Xác minh các trường bằng chứng:** Host (`host.hostname`), User (`user.name`), Parent Process (`process.parent.name`), Command Line nguyên bản và Hash SHA256.
+
+6. **Tương quan và đóng Case:**
+   - Tạo Detection Rule cho kỹ thuật PowerShell mã hóa.
+   - Tạo Case `LAB Scenario 4 — Suspicious PowerShell Execution on Windows Endpoint`, phân loại `Authorized lab activity`.
+
+## 4.4. Điểm nhấn kiến trúc
+
+Network sensor (Zeek/Suricata) chỉ thấy lưu lượng mạng nhưng không thể thấy được tiến trình nào sinh ra kết nối đó nếu traffic bị mã hóa. Elastic Agent kết hợp Sysmon cung cấp ngữ cảnh đầy đủ: Process ID, Parent Process, Hash và Command Line chi tiết.
 
 ---
 
